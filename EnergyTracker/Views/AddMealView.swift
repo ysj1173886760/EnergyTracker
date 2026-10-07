@@ -10,6 +10,7 @@ struct AddMealView: View {
     @State private var pickerItem: PhotosPickerItem?
     @State private var showingCamera = false
     @State private var note = ""
+    @State private var oilLevel: String?
     @State private var timestamp: Date
     @State private var mealType: MealType
     @State private var errorMessage: String?
@@ -122,6 +123,7 @@ struct AddMealView: View {
                     Text("没有照片也可以，只写文字描述，例如「一碗牛肉面，加了个煎蛋」。")
                 }
 
+        Section("油量") { OilLevelPicker(selection: $oilLevel) }
                 Section("补充说明（可选）") {
                     TextField("例如：只吃了一半、外卖比较油、饭是半碗", text: $note, axis: .vertical)
                         .lineLimit(2...5)
@@ -152,6 +154,7 @@ struct AddMealView: View {
             let filename = try image.map { try PhotoStore.save($0) }
             let meal = Meal(timestamp: timestamp, mealType: mealType,
                             note: note.trimmingCharacters(in: .whitespacesAndNewlines), photoFilename: filename)
+            meal.oilLevelRaw = oilLevel
             context.insert(meal)
             try context.save()
             analyzer.analyze(meal)

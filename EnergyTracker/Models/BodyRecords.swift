@@ -11,6 +11,9 @@ final class BodyMeasurement {
     var scaleBMR: Double?
     var muscleKg: Double?
     var note: String = ""
+    var healthKitSource: String?
+    var healthKitFatDate: Date?
+    var healthKitWaistDate: Date?
 
     init(date: Date) {
         self.date = date

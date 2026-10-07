@@ -1,6 +1,18 @@
 import Foundation
 import SwiftData
 
+enum OilLevel: String, CaseIterable, Identifiable {
+    case less, normal, heavy
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .less: "少油"
+        case .normal: "正常"
+        case .heavy: "重油"
+        }
+    }
+}
+
 enum MealStatus: String, Codable {
     case pending
     case recognizing
@@ -68,6 +80,7 @@ final class Meal {
     var mealTypeRaw: String = MealType.snack.rawValue
     var note: String = ""
     var photoFilename: String?
+    var oilLevelRaw: String?
 
     var statusRaw: String = MealStatus.pending.rawValue
     var errorMessage: String?
@@ -115,6 +128,15 @@ final class Meal {
         followUps.contains { !$0.isApplied }
     }
 
+    var totalSodiumMg: Double? {
+        NutritionTotals.sum(items.map { item in item.sodiumMgPer100g.map { $0 * item.grams / 100 } })
+    }
+    var totalAddedSugar: Double? {
+        NutritionTotals.sum(items.map { item in item.addedSugarPer100g.map { $0 * item.grams / 100 } })
+    }
+    var totalFiber: Double? {
+        NutritionTotals.sum(items.map { item in item.fiberPer100g.map { $0 * item.grams / 100 } })
+    }
     var totalKcal: Double { items.reduce(0) { $0 + $1.kcal } }
     var totalProtein: Double { items.reduce(0) { $0 + $1.protein } }
     var totalFat: Double { items.reduce(0) { $0 + $1.fat } }

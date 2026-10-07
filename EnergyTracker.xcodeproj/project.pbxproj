@@ -131,6 +131,9 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
+				CODE_SIGN_ENTITLEMENTS = EnergyTracker/EnergyTracker.entitlements;
+				INFOPLIST_KEY_NSHealthShareUsageDescription = "读取体重、体脂率、腰围、步数和活动能量，用于计算目标和分析趋势";
+				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "把记录的饮食热量、营养素和体重写入「健康」App";
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 56P7BMF2SC;
 				ENABLE_PREVIEWS = YES;
@@ -160,6 +163,9 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
+				CODE_SIGN_ENTITLEMENTS = EnergyTracker/EnergyTracker.entitlements;
+				INFOPLIST_KEY_NSHealthShareUsageDescription = "读取体重、体脂率、腰围、步数和活动能量，用于计算目标和分析趋势";
+				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "把记录的饮食热量、营养素和体重写入「健康」App";
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 56P7BMF2SC;
 				ENABLE_PREVIEWS = YES;

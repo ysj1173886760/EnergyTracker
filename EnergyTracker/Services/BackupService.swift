@@ -51,6 +51,9 @@ enum BackupService {
         var scaleBMR: Double?
         var muscleKg: Double?
         var note: String
+        var healthKitSource: String?
+        var healthKitFatDate: Date?
+        var healthKitWaistDate: Date?
     }
 
     struct Assessment: Codable {
@@ -103,6 +106,7 @@ enum BackupService {
     struct Weight: Codable {
         var date: Date
         var kg: Double
+        var healthKitSampleID: String?
     }
 
     struct MealRecord: Codable {
@@ -118,6 +122,7 @@ enum BackupService {
         var rawVisionResponse: String?
         var rawNutritionResponse: String?
         var estimatedTotalKcal: Double?
+        var oilLevelRaw: String?
         var photoFilename: String?
         var photo: Data?
         var items: [Item]
@@ -133,9 +138,13 @@ enum BackupService {
         var portionBasis: String
         var confidence: Double?
         var kcalPer100g: Double?
+        var kcalUncertainty: Double?
         var proteinPer100g: Double?
         var fatPer100g: Double?
         var carbsPer100g: Double?
+        var fiberPer100g: Double?
+        var sodiumMgPer100g: Double?
+        var addedSugarPer100g: Double?
         var nutritionBasis: String
         var sortIndex: Int
     }
@@ -167,20 +176,25 @@ enum BackupService {
 
         let backup = Backup(
             profile: profile,
-            weights: weights.map { Weight(date: $0.date, kg: $0.kg) },
+            weights: weights.map { Weight(date: $0.date, kg: $0.kg, healthKitSampleID: $0.healthKitSampleID) },
             meals: meals.map { meal in
                 MealRecord(
                     id: meal.id, timestamp: meal.timestamp, mealType: meal.mealTypeRaw, note: meal.note,
                     status: meal.statusRaw, errorMessage: meal.errorMessage, sceneNotes: meal.sceneNotes,
                     visionModel: meal.visionModel, nutritionModel: meal.nutritionModel,
                     rawVisionResponse: meal.rawVisionResponse, rawNutritionResponse: meal.rawNutritionResponse,
-                    estimatedTotalKcal: meal.estimatedTotalKcal, photoFilename: meal.photoFilename,
+                    estimatedTotalKcal: meal.estimatedTotalKcal, oilLevelRaw: meal.oilLevelRaw,
+                    photoFilename: meal.photoFilename,
                     photo: includePhotos ? meal.photoFilename.flatMap(PhotoStore.rawData) : nil,
                     items: meal.sortedItems.map { item in
                         Item(name: item.name, detail: item.detail, grams: item.grams, estimatedGrams: item.estimatedGrams,
                              count: item.count, portionBasis: item.portionBasis, confidence: item.confidence,
-                             kcalPer100g: item.kcalPer100g, proteinPer100g: item.proteinPer100g,
+                            kcalPer100g: item.kcalPer100g, kcalUncertainty: item.kcalUncertainty,
+                            proteinPer100g: item.proteinPer100g,
                              fatPer100g: item.fatPer100g, carbsPer100g: item.carbsPer100g,
+                            fiberPer100g: item.fiberPer100g,
+                            sodiumMgPer100g: item.sodiumMgPer100g,
+                            addedSugarPer100g: item.addedSugarPer100g,
                              nutritionBasis: item.nutritionBasis, sortIndex: item.sortIndex)
                     },
                     followUps: meal.sortedFollowUps.map { FollowUp(text: $0.text, createdAt: $0.createdAt, reply: $0.reply) }
@@ -192,7 +206,8 @@ enum BackupService {
             },
             measurements: measurements.map {
                 Measurement(date: $0.date, weightKg: $0.weightKg, bodyFatPct: $0.bodyFatPct, waistCm: $0.waistCm,
-                            scaleBMR: $0.scaleBMR, muscleKg: $0.muscleKg, note: $0.note)
+                    scaleBMR: $0.scaleBMR, muscleKg: $0.muscleKg, note: $0.note, healthKitSource: $0.healthKitSource,
+                    healthKitFatDate: $0.healthKitFatDate, healthKitWaistDate: $0.healthKitWaistDate)
             },
             assessments: assessments.map {
                 Assessment(createdAt: $0.createdAt, model: $0.model, contentJSON: $0.contentJSON, rawResponse: $0.rawResponse)
@@ -259,6 +274,7 @@ enum BackupService {
             let meal = Meal(timestamp: record.timestamp, mealType: MealType(rawValue: record.mealType) ?? .snack,
                             note: record.note, photoFilename: filename)
             meal.id = record.id
+            meal.oilLevelRaw = record.oilLevelRaw
             meal.statusRaw = record.status
             if meal.status.isInProgress {
                 meal.status = .failed
@@ -281,9 +297,13 @@ enum BackupService {
                 item.portionBasis = raw.portionBasis
                 item.confidence = raw.confidence
                 item.kcalPer100g = raw.kcalPer100g
+                item.kcalUncertainty = raw.kcalUncertainty
                 item.proteinPer100g = raw.proteinPer100g
                 item.fatPer100g = raw.fatPer100g
                 item.carbsPer100g = raw.carbsPer100g
+                item.fiberPer100g = raw.fiberPer100g
+                item.sodiumMgPer100g = raw.sodiumMgPer100g
+                item.addedSugarPer100g = raw.addedSugarPer100g
                 item.nutritionBasis = raw.nutritionBasis
                 meal.items.append(item)
             }
@@ -299,7 +319,9 @@ enum BackupService {
         let calendar = Calendar.current
         let existingDays = Set(try context.fetch(FetchDescriptor<WeightEntry>()).map { calendar.startOfDay(for: $0.date) })
         for weight in backup.weights where !existingDays.contains(calendar.startOfDay(for: weight.date)) {
-            context.insert(WeightEntry(date: weight.date, kg: weight.kg))
+            let entry = WeightEntry(date: weight.date, kg: weight.kg)
+            entry.healthKitSampleID = weight.healthKitSampleID
+            context.insert(entry)
             summary.weights += 1
         }
 
@@ -321,6 +343,9 @@ enum BackupService {
             measurement.scaleBMR = raw.scaleBMR
             measurement.muscleKg = raw.muscleKg
             measurement.note = raw.note
+            measurement.healthKitSource = raw.healthKitSource
+            measurement.healthKitFatDate = raw.healthKitFatDate
+            measurement.healthKitWaistDate = raw.healthKitWaistDate
             context.insert(measurement)
         }
 

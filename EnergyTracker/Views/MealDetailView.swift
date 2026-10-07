@@ -114,12 +114,19 @@ struct MealDetailView: View {
                 HStack {
                     Text("合计")
                     Spacer()
-                    Text("\(meal.totalKcal.kcalText) kcal · 蛋白 \(meal.totalProtein.gramsText)g · 脂肪 \(meal.totalFat.gramsText)g · 碳水 \(meal.totalCarbs.gramsText)g")
+                    Text(nutritionSummaryText)
                         .monospacedDigit()
                 }
                 .font(.footnote.weight(.medium))
+                NutritionTotalsRow(totals: NutritionTotals(meals: [meal]))
             }
         }
+    }
+
+    private var nutritionSummaryText: String {
+        let uncertainty = EstimateUncertainty.meal(meal).kcalText
+        return "\(meal.totalKcal.kcalText) ±\(uncertainty) kcal · 蛋白 \(meal.totalProtein.gramsText)g"
+            + " · 脂肪 \(meal.totalFat.gramsText)g · 碳水 \(meal.totalCarbs.gramsText)g"
     }
 
     private var canSendFollowUp: Bool {
@@ -183,6 +190,14 @@ struct MealDetailView: View {
         Section("信息") {
             Picker("餐次", selection: $meal.mealType) {
                 ForEach(MealType.allCases) { Text($0.title).tag($0) }
+            }
+            if !meal.isManualEntry {
+                OilLevelPicker(selection: $meal.oilLevelRaw)
+                    .disabled(busy)
+                    .onChange(of: meal.oilLevelRaw) {
+                        save()
+                        analyzer.estimateNutrition(meal)
+                    }
             }
             DatePicker("时间", selection: $meal.timestamp)
             TextField("初始说明", text: $meal.note, axis: .vertical)
@@ -256,6 +271,9 @@ struct FoodItemRow: View {
                     }
                 }
                 Text(subtitle).font(.caption).foregroundStyle(.secondary).monospacedDigit()
+                if !item.isManualEntry, (item.confidence ?? 1) < 0.6, !EstimateUncertainty.gramsEdited(item) {
+                    Text("份量把握较低，建议核对克数").font(.caption2).foregroundStyle(.orange)
+                }
             }
             Spacer()
             if item.hasNutrition {

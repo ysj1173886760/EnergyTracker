@@ -118,6 +118,9 @@ struct OpenRouterClient {
         let status = response.statusCode
         let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
 
+        if status == 402 || (object?["error"] as? [String: Any])?["code"] as? Int == 402 {
+            NotificationCenter.default.post(name: Self.paymentRequired, object: nil)
+        }
         if let error = object?["error"] as? [String: Any] {
             throw OpenRouterError.http(status: (error["code"] as? Int) ?? status, message: (error["message"] as? String) ?? "未知错误")
         }
@@ -161,9 +164,34 @@ struct OpenRouterClient {
         return (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
     }
 
-    struct KeyInfo {
+    static let paymentRequired = Notification.Name("OpenRouterPaymentRequired")
+
+    struct KeyInfo: Codable {
         let usage: Double
         let limitRemaining: Double?
+        let usageDaily: Double?
+        let usageWeekly: Double?
+        let usageMonthly: Double?
+        let limit: Double?
+    }
+
+    struct Credits: Codable {
+        let totalCredits: Double
+        let totalUsage: Double
+        var balance: Double { totalCredits - totalUsage }
+    }
+
+    func credits() async -> Credits? {
+        var request = URLRequest(url: URL(string: "https://openrouter.ai/api/v1/credits")!)
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        guard let (data, response) = try? await Self.session.data(for: request),
+            (response as? HTTPURLResponse)?.statusCode == 200,
+            let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+            let info = object["data"] as? [String: Any],
+            let total = JSONValue.double(info["total_credits"]),
+            let usage = JSONValue.double(info["total_usage"])
+        else { return nil }
+        return Credits(totalCredits: total, totalUsage: usage)
     }
 
     func keyInfo() async throws -> KeyInfo {
@@ -176,7 +204,10 @@ struct OpenRouterClient {
               let info = object["data"] as? [String: Any] else {
             throw OpenRouterError.http(status: status, message: "API Key 无效")
         }
-        return KeyInfo(usage: JSONValue.double(info["usage"]) ?? 0, limitRemaining: JSONValue.double(info["limit_remaining"]))
+        return KeyInfo(
+            usage: JSONValue.double(info["usage"]) ?? 0, limitRemaining: JSONValue.double(info["limit_remaining"]),
+            usageDaily: JSONValue.double(info["usage_daily"]), usageWeekly: JSONValue.double(info["usage_weekly"]),
+            usageMonthly: JSONValue.double(info["usage_monthly"]), limit: JSONValue.double(info["limit"]))
     }
 }
 

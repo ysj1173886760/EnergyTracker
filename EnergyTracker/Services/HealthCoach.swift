@@ -7,6 +7,7 @@ import UIKit
 @MainActor
 @Observable
 final class HealthCoach {
+    var healthSync: HealthSync?
     private(set) var isAssessing = false
     private(set) var assessmentError: String?
     private(set) var summarizing: Set<Date> = []
@@ -198,6 +199,7 @@ final class HealthCoach {
         let todayKcal = todayMeals.reduce(0) { $0 + $1.totalKcal }
         let todayProtein = todayMeals.reduce(0) { $0 + $1.totalProtein }
         var today: [String: Any] = [
+            "kcal_uncertainty_kcal": Int(EstimateUncertainty.day(todayMeals).rounded()),
             "remaining_kcal": budget - Int(todayKcal.rounded()),
             "date": day.formatted(Self.dateFormat),
             "weekday": day.formatted(.dateTime.weekday(.wide)),
@@ -214,6 +216,7 @@ final class HealthCoach {
                     "protein_g": Int(meal.totalProtein.rounded()),
                     "items": meal.sortedItems.map { "\($0.name) \(Int($0.grams.rounded()))g" },
                 ]
+                entry.merge(NutritionTotals(meals: [meal]).payload) { _, new in new }
                 if !meal.note.isEmpty { entry["note"] = meal.note }
                 return entry
             },
@@ -227,6 +230,11 @@ final class HealthCoach {
             },
         ]
 
+        today.merge(NutritionTotals(meals: todayMeals).payload) { _, new in new }
+        if let activity = healthSync?.activity(on: day) {
+            if let steps = activity.steps { today["steps"] = Int(steps.rounded()) }
+            if let kcal = activity.activeEnergy { today["active_energy_kcal"] = Int(kcal.rounded()) }
+        }
         if let protein = goal.proteinG { today["protein_remaining_g"] = protein - Int(todayProtein.rounded()) }
 
         let weightByDay = Dictionary(weights.map { (calendar.startOfDay(for: $0.date), $0.kg) }, uniquingKeysWith: { _, last in last })
@@ -248,11 +256,17 @@ final class HealthCoach {
                 info["exercise_kcal"] = Int(dayExercises.reduce(0) { $0 + $1.netKcal }.rounded())
                 info["exercises"] = dayExercises.map(\.summaryText)
             }
+            if let steps = healthSync?.activity(on: date)?.steps { info["steps"] = Int(steps.rounded()) }
             if let kg = weightByDay[date] { info["weight_kg"] = Self.round1(kg) }
             return info
         }
 
+        let healthFlags = HealthGuard.flags(
+            meals: fetch(FetchDescriptor<Meal>()), exercises: fetch(FetchDescriptor<ExerciseSession>()),
+            trend: WeightTrend.compute(weights), profile: profile, goal: goal, metrics: store.metrics,
+            now: min(Date.now, end))
         var payload: [String: Any] = [
+            "health_flags": healthFlags.map(\.payload),
             "is_in_progress": isPartial,
             "profile": profileInfo,
             "today": today,
@@ -439,6 +453,7 @@ final class HealthCoach {
             "kcal_target_is_manual": goal.isManual,
             "safety_floor_kcal": profile.sex == .male ? 1500 : 1200,
         ]
+        if let adjustment = profile.kcalAdjustment { info["kcal_calibration_kcal"] = adjustment }
         if profile.isConfigured {
             info["sex"] = profile.sex.title
             info["age"] = profile.age

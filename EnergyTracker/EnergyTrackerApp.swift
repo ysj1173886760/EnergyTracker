@@ -4,6 +4,9 @@ import SwiftUI
 @main
 struct EnergyTrackerApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+    @Environment(\.scenePhase) private var scenePhase
+    @State private var healthSync: HealthSync
+    @State private var usageMonitor = UsageMonitor()
     private let container: ModelContainer
     @State private var analyzer: MealAnalyzer
     @State private var profileStore = ProfileStore()
@@ -23,7 +26,11 @@ struct EnergyTrackerApp: App {
         }
         _analyzer = State(initialValue: MealAnalyzer(container: container))
         _exerciseAnalyzer = State(initialValue: ExerciseAnalyzer(container: container))
-        _coach = State(initialValue: HealthCoach(container: container))
+        let healthSync = HealthSync()
+        let coach = HealthCoach(container: container)
+        coach.healthSync = healthSync
+        _healthSync = State(initialValue: healthSync)
+        _coach = State(initialValue: coach)
     }
 
     var body: some Scene {
@@ -35,6 +42,14 @@ struct EnergyTrackerApp: App {
                 .environment(exerciseAnalyzer)
                 .environment(coach)
                 .environment(notifications)
+                .environment(healthSync)
+                .environment(usageMonitor)
+                .onChange(of: scenePhase) { _, phase in
+                    if phase == .active {
+                        Task { await healthSync.sync(context: container.mainContext, profileStore: profileStore) }
+                        Task { await usageMonitor.refresh(force: false) }
+                    }
+                }
                 .task {
                     BackgroundTransport.shared.cancelOrphanedTasks()
                     profileStore.refresh(in: container.mainContext)
@@ -45,6 +60,8 @@ struct EnergyTrackerApp: App {
                     #endif
                     await notifications.requestAuthorization()
                     await notifications.reschedule()
+                    await healthSync.sync(context: container.mainContext, profileStore: profileStore)
+                    await usageMonitor.refresh(force: false)
                 }
         }
         .modelContainer(container)

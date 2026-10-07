@@ -13,9 +13,13 @@ final class FoodItem {
     var confidence: Double?
 
     var kcalPer100g: Double?
+    var kcalUncertainty: Double?
     var proteinPer100g: Double?
     var fatPer100g: Double?
     var carbsPer100g: Double?
+    var fiberPer100g: Double?
+    var sodiumMgPer100g: Double?
+    var addedSugarPer100g: Double?
     var nutritionBasis: String = ""
 
     var sortIndex: Int = 0
@@ -42,9 +46,13 @@ final class FoodItem {
 
     func clearNutrition() {
         kcalPer100g = nil
+        kcalUncertainty = nil
         proteinPer100g = nil
         fatPer100g = nil
         carbsPer100g = nil
+        fiberPer100g = nil
+        sodiumMgPer100g = nil
+        addedSugarPer100g = nil
         nutritionBasis = ""
     }
 }

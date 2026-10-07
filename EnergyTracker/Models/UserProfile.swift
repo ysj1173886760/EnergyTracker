@@ -59,6 +59,7 @@ struct UserProfile: Codable, Equatable {
     var targetBodyFatPct: Double?
     var exerciseEatBack: Double?
     var bmrSourceRaw: String?
+    var kcalAdjustment: Int?
 
     var age: Int {
         Calendar.current.component(.year, from: .now) - birthYear

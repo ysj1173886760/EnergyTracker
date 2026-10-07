@@ -9,7 +9,9 @@ struct ProfileView: View {
         NavigationStack {
             Form {
                 GoalSummarySection(goal: profileStore.goal, profile: profileStore.profile,
-                                   weightKg: profileStore.trendWeightKg ?? profileStore.latestWeightKg)
+                    weightKg: profileStore.trendWeightKg ?? profileStore.latestWeightKg,
+                    clearCalibration: { profileStore.profile.kcalAdjustment = nil })
+                TargetCalibrationSection(showsProgress: true)
 
                 Section {
                     NavigationLink { BodyStatusView() } label: {
@@ -23,6 +25,11 @@ struct ProfileView: View {
                     }
                     NavigationLink { ModelSettingsView() } label: {
                         Label("模型与 API Key", systemImage: "cpu")
+                    }
+                    NavigationLink {
+                        HealthSettingsView()
+                    } label: {
+                        Label("Apple 健康", systemImage: "heart.fill")
                     }
                     NavigationLink { BackupView() } label: {
                         Label("数据备份", systemImage: "externaldrive")
@@ -38,9 +45,14 @@ struct GoalSummarySection: View {
     let goal: NutritionGoal
     let profile: UserProfile
     let weightKg: Double?
+    var clearCalibration: (() -> Void)?
 
     var body: some View {
         Section {
+            if let adjustment = profile.kcalAdjustment, adjustment != 0 {
+                Text("已按实测校准 \(adjustment >= 0 ? "+" : "")\(adjustment) kcal")
+                if let clearCalibration { Button("清除校准", action: clearCalibration) }
+            }
             LabeledContent("每日热量", value: "\(goal.kcal) kcal")
             if let protein = goal.proteinG {
                 LabeledContent("每日蛋白质", value: "\(protein) g")
@@ -225,6 +237,7 @@ private extension Binding {
 // MARK: - Model settings
 
 struct ModelSettingsView: View {
+    @Environment(UsageMonitor.self) private var usageMonitor
     @AppStorage(AppSettings.Key.visionModel) private var visionModel = AppSettings.defaultVisionModel
     @AppStorage(AppSettings.Key.nutritionModel) private var nutritionModel = AppSettings.defaultNutritionModel
     @AppStorage(AppSettings.Key.nutritionReasoning) private var nutritionReasoning = true
@@ -244,6 +257,7 @@ struct ModelSettingsView: View {
                     .onChange(of: apiKey) { _, value in
                         KeychainStore.apiKey = value.trimmingCharacters(in: .whitespacesAndNewlines)
                         keyStatus = nil
+                        usageMonitor.resetForKeyChange()
                     }
                 Button {
                     Task { await checkKey() }
@@ -260,6 +274,21 @@ struct ModelSettingsView: View {
                 Text(keyStatus ?? "Key 保存在本机钥匙串中。建议为这个 App 单独创建一个设置了消费上限的 Key。")
             }
 
+            Section("用量") {
+                LabeledContent("账户余额", value: money(usageMonitor.accountCredits?.balance))
+                LabeledContent("Key 剩余额度", value: keyRemainingText)
+                LabeledContent("今日花费", value: money(usageMonitor.keyInfo?.usageDaily))
+                LabeledContent("本周花费", value: money(usageMonitor.keyInfo?.usageWeekly))
+                LabeledContent("本月花费", value: money(usageMonitor.keyInfo?.usageMonthly))
+                Button(usageMonitor.isRefreshing ? "刷新中…" : "刷新用量") { Task { await usageMonitor.refresh() } }
+                    .disabled(usageMonitor.isRefreshing || apiKey.isEmpty)
+                LabeledContent(
+                    "更新时间", value: usageMonitor.updatedAt?.formatted(date: .abbreviated, time: .shortened) ?? "尚未更新")
+                if usageMonitor.accountCredits == nil {
+                    Text("账户余额暂不可用，部分 Key 无权读取；仍可查看 Key 用量。").font(.footnote).foregroundStyle(.secondary)
+                }
+                if let error = usageMonitor.error { Text(error).font(.footnote).foregroundStyle(.orange) }
+            }
             Section {
                 ModelField(title: "识别模型（看图）", value: $visionModel, suggestions: AppSettings.visionModelSuggestions)
                 ModelField(title: "热量模型（文本）", value: $nutritionModel, suggestions: AppSettings.nutritionModelSuggestions)
@@ -276,6 +305,15 @@ struct ModelSettingsView: View {
         .navigationBarTitleDisplayMode(.inline)
     }
 
+    private var keyRemainingText: String {
+        if let info = usageMonitor.keyInfo, info.limit == nil {
+            return "未设置上限"
+        }
+        return money(usageMonitor.keyInfo?.limitRemaining)
+    }
+
+    private func money(_ value: Double?) -> String { value.map { String(format: "$%.2f", $0) } ?? "—" }
+
     private func checkKey() async {
         checkingKey = true
         defer { checkingKey = false }
@@ -284,6 +322,7 @@ struct ModelSettingsView: View {
             var text = String(format: "连接成功，已用 $%.2f", info.usage)
             if let remaining = info.limitRemaining { text += String(format: "，剩余额度 $%.2f", remaining) }
             keyStatus = text
+            await usageMonitor.refresh()
         } catch {
             keyStatus = "连接失败：\(error.localizedDescription)"
         }

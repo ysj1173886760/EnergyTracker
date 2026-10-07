@@ -22,7 +22,7 @@ final class WeeklyReviewer {
             do {
                 let client = try OpenRouterClient.fromKeychain()
                 let model = AppSettings.reviewModel
-                let input = try Self.payload(stats, profile: profile, previous: previous)
+                let input = try Self.payload(stats, profile: profile, previous: previous, context: context)
                 let response = try await client.chatJSON(model: model, system: Prompts.weeklyReview, user: [.text(input)])
                 let content = ReviewContent(json: response.json)
                 guard !content.summary.isEmpty || !content.headline.isEmpty else {
@@ -43,7 +43,9 @@ final class WeeklyReviewer {
         }
     }
 
-    private static func payload(_ stats: WeeklyStats, profile: UserProfile, previous: WeeklyReview?) throws -> String {
+    private static func payload(
+        _ stats: WeeklyStats, profile: UserProfile, previous: WeeklyReview?, context: ModelContext
+    ) throws -> String {
         let goal = stats.goal
         let dateFormat = Date.FormatStyle().year().month(.twoDigits).day(.twoDigits)
         let weekdayFormat = Date.FormatStyle().weekday(.wide)
@@ -94,6 +96,7 @@ final class WeeklyReviewer {
             info["protein_g"] = Int(day.protein.rounded())
             info["fat_g"] = Int(day.fat.rounded())
             info["carbs_g"] = Int(day.carbs.rounded())
+            info.merge(NutritionTotals(meals: day.meals).payload) { _, new in new }
             info["meals"] = day.meals.map { meal -> [String: Any] in
                 var entry: [String: Any] = [
                     "type": meal.mealType.title,
@@ -114,7 +117,16 @@ final class WeeklyReviewer {
         if let end = stats.trendEndKg { weight["trend_end_kg"] = (end * 10).rounded() / 10 }
         if let change = stats.trendChangeKg { weight["trend_change_kg"] = (change * 100).rounded() / 100 }
 
+        let allWeights = try context.fetch(FetchDescriptor<WeightEntry>())
+        let cutoff = min(Date.now, stats.weekEnd)
+        let points = WeightTrend.compute(allWeights.filter { $0.date < cutoff })
+        let metrics = points.last.map { BodyMetrics(profile: profile, weightKg: $0.trendKg, body: BodySnapshot()) }
+        let flags = HealthGuard.flags(
+            meals: try context.fetch(FetchDescriptor<Meal>()),
+            exercises: try context.fetch(FetchDescriptor<ExerciseSession>()),
+            trend: points, profile: profile, goal: goal, metrics: metrics, now: cutoff)
         var payload: [String: Any] = [
+            "health_flags": flags.map(\.payload),
             "week": "\(stats.weekStart.formatted(dateFormat)) 至 \(stats.weekEnd.addingTimeInterval(-1).formatted(dateFormat))",
             "is_partial_week": stats.isPartial,
             "profile": profileInfo,

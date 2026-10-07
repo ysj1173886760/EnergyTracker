@@ -91,7 +91,8 @@ enum GoalCalculator {
         let floor: Double = profile.sex == .male ? 1500 : 1200
 
         var warnings: [String] = []
-        var target = tdee - deficit
+        let adjustment = profile.manualKcalTarget == nil ? (profile.kcalAdjustment ?? 0) : 0
+        var target = tdee - deficit + Double(adjustment)
         if target < floor {
             warnings.append("按当前减重速度，热量会低于 \(Int(floor)) kcal 的安全下限，已按下限设置。建议放慢减重速度或增加活动。")
             target = floor

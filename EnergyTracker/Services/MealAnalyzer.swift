@@ -101,6 +101,7 @@ final class MealAnalyzer {
             parts.append(.text("没有照片。用户的文字描述：\(note)"))
         }
 
+        if let oil = meal.oilLevelRaw.flatMap(OilLevel.init) { parts.append(.text("用户确认油量：\(oil.title)")) }
         let model = AppSettings.visionModel
         let response = try await client.chatJSON(model: model, system: Prompts.vision, user: parts)
 
@@ -150,6 +151,7 @@ final class MealAnalyzer {
             "previous_followups": meal.sortedFollowUps.filter(\.isApplied).map(\.text),
             "new_followups": pending.map(\.text),
         ]
+        payload["oil_level"] = meal.oilLevelRaw ?? "auto"
         if let scene = meal.sceneNotes, !scene.isEmpty { payload["scene_notes"] = scene }
         let note = meal.note.trimmingCharacters(in: .whitespacesAndNewlines)
         if !note.isEmpty { payload["original_note"] = note }
@@ -219,6 +221,7 @@ final class MealAnalyzer {
                 return entry
             },
         ]
+        payload["oil_level"] = meal.oilLevelRaw ?? "auto"
         if let scene = meal.sceneNotes, !scene.isEmpty { payload["scene_notes"] = scene }
         let note = meal.note.trimmingCharacters(in: .whitespacesAndNewlines)
         if !note.isEmpty { payload["user_note"] = note }
@@ -237,9 +240,13 @@ final class MealAnalyzer {
             guard items.indices.contains(index), let kcal = JSONValue.double(raw["kcal_per_100g"]) else { continue }
             let item = items[index]
             item.kcalPer100g = kcal
+            item.kcalUncertainty = JSONValue.double(raw["kcal_uncertainty"]).map { min(0.5, max(0.05, $0)) }
             item.proteinPer100g = JSONValue.double(raw["protein_per_100g"])
             item.fatPer100g = JSONValue.double(raw["fat_per_100g"])
             item.carbsPer100g = JSONValue.double(raw["carbs_per_100g"])
+            item.fiberPer100g = JSONValue.double(raw["fiber_per_100g"]).map { max(0, $0) }
+            item.sodiumMgPer100g = JSONValue.double(raw["sodium_mg_per_100g"]).map { max(0, $0) }
+            item.addedSugarPer100g = JSONValue.double(raw["added_sugar_per_100g"]).map { max(0, $0) }
             item.nutritionBasis = JSONValue.string(raw["basis"])
             matched += 1
         }

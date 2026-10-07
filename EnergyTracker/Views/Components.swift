@@ -20,6 +20,7 @@ struct DailySummaryCard: View {
     let goal: NutritionGoal
     /// Kcal added to the budget from exercise.
     var exerciseBonus: Int = 0
+    var uncertainty: Double?
 
     private var budget: Int { goal.kcal + exerciseBonus }
     private var progress: Double { budget > 0 ? kcal / Double(budget) : 0 }
@@ -47,6 +48,9 @@ struct DailySummaryCard: View {
                 Text(remaining >= 0 ? "还可以吃 \(remaining) kcal" : "已超出 \(-remaining) kcal")
                     .font(.headline)
                     .foregroundStyle(remaining >= 0 ? Color.primary : Color.red)
+                if let uncertainty, uncertainty > 0 {
+                    Text("误差约 ±\(uncertainty.kcalText) kcal").font(.caption2).foregroundStyle(.secondary)
+                }
                 MacroRow(label: "蛋白质", grams: protein, target: goal.proteinG, color: .blue)
                 MacroRow(label: "脂肪", grams: fat, color: .orange)
                 MacroRow(label: "碳水", grams: carbs, color: .green)
@@ -138,6 +142,10 @@ struct MealRow: View {
         case .done:
             VStack(alignment: .trailing, spacing: 0) {
                 Text(meal.totalKcal.kcalText).font(.headline).monospacedDigit()
+                let uncertainty = EstimateUncertainty.meal(meal)
+                if !meal.isManualEntry, uncertainty > 0 {
+                    Text("±\(uncertainty.kcalText)").font(.caption2).foregroundStyle(.secondary)
+                }
                 Text("kcal").font(.caption2).foregroundStyle(.secondary)
             }
         case .failed:
@@ -146,4 +154,49 @@ struct MealRow: View {
             ProgressView()
         }
     }
+}
+
+struct OilLevelPicker: View {
+    @Binding var selection: String?
+    var body: some View {
+        Picker("油量", selection: $selection) {
+            Text("自动").tag(nil as String?)
+            ForEach(OilLevel.allCases) { Text($0.title).tag(Optional($0.rawValue)) }
+        }
+        .pickerStyle(.segmented)
+    }
+}
+
+struct NutritionTotalsRow: View {
+    let totals: NutritionTotals
+    var showsReferences = false
+    var body: some View {
+        if totals.hasData {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(
+                    nutrientText(
+                        "膳食纤维", value: totals.fiber?.gramsText, reference: NutritionTotals.fiberReference, unit: "g"))
+                Text(
+                    nutrientText(
+                        "钠", value: totals.sodium?.kcalText, reference: NutritionTotals.sodiumReference, unit: "mg")
+                )
+                .foregroundStyle((totals.sodium ?? 0) > NutritionTotals.sodiumReference ? Color.orange : .secondary)
+                Text(
+                    nutrientText(
+                        "添加糖", value: totals.addedSugar?.gramsText, reference: NutritionTotals.addedSugarReference,
+                        unit: "g")
+                )
+                .foregroundStyle(
+                    (totals.addedSugar ?? 0) > NutritionTotals.addedSugarReference ? Color.orange : .secondary)
+                if totals.isPartial { Text("部分餐食无数据") }
+            }
+            .font(.caption).foregroundStyle(.secondary)
+        }
+    }
+
+    private func nutrientText(_ label: String, value: String?, reference: Double, unit: String) -> String {
+        let referenceText = showsReferences ? " / \(Int(reference))" : ""
+        return "\(label) \(value ?? "—")\(referenceText) \(unit)"
+    }
+
 }

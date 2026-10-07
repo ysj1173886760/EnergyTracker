@@ -41,6 +41,8 @@ struct TodayView: View {
 struct DayMealList: View {
     @Environment(\.modelContext) private var context
     @Environment(ProfileStore.self) private var profileStore
+    @Environment(HealthSync.self) private var healthSync
+    @Environment(UsageMonitor.self) private var usageMonitor
     @Query private var meals: [Meal]
     @Query private var weights: [WeightEntry]
     @Query private var exercises: [ExerciseSession]
@@ -68,6 +70,10 @@ struct DayMealList: View {
 
     var body: some View {
         List {
+            if showsTodayExtras, Calendar.current.isDateInToday(date), let warning = usageMonitor.warning {
+                Section { Label(warning, systemImage: "exclamationmark.triangle.fill").foregroundStyle(.orange) }
+            }
+            if showsTodayExtras, Calendar.current.isDateInToday(date) { HealthGuardSection() }
             if showsMissingKeyHint {
                 Section {
                     Label("请先到「我的 → 模型与 API Key」中填写 OpenRouter API Key", systemImage: "key.fill")
@@ -81,6 +87,7 @@ struct DayMealList: View {
                     }
                 }
             }
+            if showsTodayExtras, Calendar.current.isDateInToday(date) { TargetCalibrationSection() }
             Section {
                 DailySummaryCard(
                     kcal: meals.reduce(0) { $0 + $1.totalKcal },
@@ -88,8 +95,13 @@ struct DayMealList: View {
                     fat: meals.reduce(0) { $0 + $1.totalFat },
                     carbs: meals.reduce(0) { $0 + $1.totalCarbs },
                     goal: profileStore.goal,
-                    exerciseBonus: exerciseBonus
+                    exerciseBonus: exerciseBonus,
+                    uncertainty: EstimateUncertainty.day(meals)
                 )
+                NutritionTotalsRow(totals: NutritionTotals(meals: meals), showsReferences: true)
+                if showsTodayExtras, healthSync.isEnabled {
+                    Text(healthSync.activityText(on: date)).font(.footnote).foregroundStyle(.secondary)
+                }
                 if showsTodayExtras {
                     weightRow
                 }
