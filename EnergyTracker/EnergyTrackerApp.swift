@@ -85,18 +85,30 @@ struct EnergyTrackerApp: App {
 }
 
 struct RootView: View {
+    @State private var selectedTab = {
+        #if DEBUG
+        if ProcessInfo.processInfo.environment["DEBUG_INITIAL_TAB"] == "trends" { return "trends" }
+        #endif
+        return "today"
+    }()
+
     var body: some View {
-        TabView {
+        TabView(selection: $selectedTab) {
             TodayView()
                 .tabItem { Label("今天", systemImage: "fork.knife") }
+                .tag("today")
             TrendsView()
                 .tabItem { Label("趋势", systemImage: "chart.xyaxis.line") }
+                .tag("trends")
             CoachView()
                 .tabItem { Label("教练", systemImage: "bubble.left.and.text.bubble.right") }
+                .tag("coach")
             ReviewView()
                 .tabItem { Label("复盘", systemImage: "sparkles") }
+                .tag("review")
             ProfileView()
                 .tabItem { Label("我的", systemImage: "person.crop.circle") }
+                .tag("profile")
         }
     }
 }

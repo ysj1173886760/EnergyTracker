@@ -6,10 +6,16 @@ struct TrendsView: View {
     private enum Tab: String, CaseIterable, Identifiable {
         case weight = "体重"
         case calories = "热量"
+        case checkin = "打卡"
         var id: String { rawValue }
     }
 
-    @State private var tab: Tab = .weight
+    @State private var tab: Tab = {
+        #if DEBUG
+        if ProcessInfo.processInfo.environment["DEBUG_TRENDS_TAB"] == "checkin" { return .checkin }
+        #endif
+        return .weight
+    }()
 
     var body: some View {
         NavigationStack {
@@ -17,6 +23,7 @@ struct TrendsView: View {
                 switch tab {
                 case .weight: WeightTrendList()
                 case .calories: CalorieHistoryList()
+                case .checkin: CheckInView()
                 }
             }
             .navigationTitle("趋势")
@@ -27,7 +34,7 @@ struct TrendsView: View {
                         ForEach(Tab.allCases) { Text($0.rawValue).tag($0) }
                     }
                     .pickerStyle(.segmented)
-                    .frame(width: 180)
+                    .frame(width: 240)
                 }
             }
         }

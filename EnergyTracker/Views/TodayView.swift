@@ -98,6 +98,9 @@ struct DayMealList: View {
                     exerciseBonus: exerciseBonus,
                     uncertainty: EstimateUncertainty.day(meals)
                 )
+                if showsTodayExtras, Calendar.current.isDateInToday(date) {
+                    CheckInStreakRow()
+                }
                 NutritionTotalsRow(totals: NutritionTotals(meals: meals), showsReferences: true)
                 if showsTodayExtras, healthSync.isEnabled {
                     Text(healthSync.activityText(on: date)).font(.footnote).foregroundStyle(.secondary)

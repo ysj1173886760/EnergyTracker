@@ -35,6 +35,58 @@ struct OfflineChecks {
             m.status = .done
             return m
         }
+        for count in 0...5 {
+            for hasWeight in [false, true] {
+                for hasExercise in [false, true] {
+                    let score = min(count, 3) + (hasWeight ? 1 : 0) + (hasExercise ? 1 : 0)
+                    let expected = [0, 1, 2, 3, 3, 4][score]
+                    let day = CheckInDay(date: now, mealCount: count,
+                                         hasWeight: hasWeight, hasExercise: hasExercise)
+                    check(day.level == expected, "打卡等级及餐数上限")
+                }
+            }
+        }
+        let yesterdayStreak = CheckIn(meals: [-3, -2, -1].map { meal($0, 100) },
+                                      exercises: [], weights: [], now: now)
+        check(yesterdayStreak.currentStreak == 3, "今天未记录从昨天计算连续天数")
+        check(yesterdayStreak.recentCount == 3 && yesterdayStreak.recentTotal == 4, "新用户近30天分母含今天")
+        let gap = CheckIn(meals: [-10, -9, -8, -7, -3, -2].map { meal($0, 100) },
+                          exercises: [], weights: [], now: now)
+        check(gap.currentStreak == 0 && gap.longestStreak == 4, "断档归零且保留最长连续")
+        let empty = CheckIn(meals: [], exercises: [], weights: [], now: now)
+        check(empty.recentTotal == 0 && empty.totalCount == 0 && empty.longestStreak == 0, "无记录统计")
+        let pending = meal(-100, 0)
+        pending.status = .pending
+        let failed = meal(0, 0)
+        failed.status = .failed
+        let exercise = ExerciseSession(timestamp: date(-1), text: "步行", weightKg: 70)
+        exercise.status = .done
+        let unfinished = ExerciseSession(timestamp: date(0), text: "步行", weightKg: 70)
+        unfinished.status = .failed
+        let mixed = CheckIn(meals: [pending, failed, meal(1, 100)], exercises: [exercise, unfinished],
+                            weights: [WeightEntry(date: date(-2), kg: 70), WeightEntry(date: date(-2), kg: 71)],
+                            now: now)
+        check(mixed.currentStreak == 2 && mixed.totalCount == 2, "体重运动独立打卡且同日去重")
+        check(mixed.recentTotal == 3 && !mixed.day(on: now).isLogged, "排除未完成和未来记录")
+        let fullWindow = CheckIn(meals: [-40, -30, -29, 0].map { meal($0, 100) },
+                                exercises: [], weights: [], now: now)
+        check(fullWindow.recentTotal == 30 && fullWindow.recentCount == 2, "近30天包含今天及前29天")
+        let tie = CheckIn(meals: [-5, -4, -1, 0].map { meal($0, 100) },
+                          exercises: [], weights: [], now: now)
+        check(tie.currentStreak == 2 && !tie.isNewRecord, "追平历史连续不是新纪录")
+        let record = CheckIn(meals: [-5, -4, -2, -1, 0].map { meal($0, 100) },
+                             exercises: [], weights: [], now: now)
+        check(record.isNewRecord && record.longestStreak == 3, "今天创连续新纪录")
+        var dstCalendar = Calendar(identifier: .gregorian)
+        dstCalendar.timeZone = TimeZone(identifier: "America/Los_Angeles")!
+        let dstStart = dstCalendar.date(from: DateComponents(year: 2026, month: 3, day: 7))!
+        let dstWeights = (0..<3).map {
+            WeightEntry(date: dstCalendar.date(byAdding: .day, value: $0, to: dstStart)!, kg: 70)
+        }
+        let dst = CheckIn(meals: [], exercises: [], weights: dstWeights,
+                          now: dstWeights[2].date, calendar: dstCalendar)
+        check(dst.currentStreak == 3 && dst.recentTotal == 3, "夏令时按日历天连续计数")
+
         let sample = meal(-1, 200)
         let item = sample.items[0]
         item.kcalUncertainty = 0.2
