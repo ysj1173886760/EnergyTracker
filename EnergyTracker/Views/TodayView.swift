@@ -4,6 +4,7 @@ import SwiftUI
 struct TodayView: View {
     @State private var selectedDate = Calendar.current.startOfDay(for: .now)
     @State private var showingAdd = false
+    @State private var showingDatePicker = false
     @State private var hasAPIKey = KeychainStore.apiKey != nil
 
     private var isToday: Bool { Calendar.current.isDateInToday(selectedDate) }
@@ -11,9 +12,20 @@ struct TodayView: View {
     var body: some View {
         NavigationStack {
             DayMealList(date: selectedDate, showsTodayExtras: true, showsMissingKeyHint: !hasAPIKey)
-                .navigationTitle(isToday ? "今天" : selectedDate.formatted(.dateTime.month().day().weekday()))
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
+                    ToolbarItem(placement: .principal) {
+                        Button { showingDatePicker = true } label: {
+                            HStack(spacing: 4) {
+                                Text(isToday ? "今天" : selectedDate.formatted(.dateTime.month().day().weekday()))
+                                    .font(.headline)
+                                Image(systemName: "chevron.down").font(.caption2)
+                            }
+                        }
+                        .tint(.primary)
+                        .accessibilityLabel("选择日期")
+                        .accessibilityValue(selectedDate.formatted(.dateTime.year().month().day()))
+                    }
                     ToolbarItemGroup(placement: .topBarLeading) {
                         Button { shiftDay(-1) } label: { Image(systemName: "chevron.left") }
                         Button { shiftDay(1) } label: { Image(systemName: "chevron.right") }
@@ -29,7 +41,30 @@ struct TodayView: View {
                 .sheet(isPresented: $showingAdd) {
                     AddMealView(day: selectedDate)
                 }
-                .onAppear { hasAPIKey = KeychainStore.apiKey != nil }
+                .sheet(isPresented: $showingDatePicker) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("选择日期").font(.headline)
+                        DatePicker("日期", selection: Binding(
+                            get: { selectedDate },
+                            set: { date in
+                                selectedDate = Calendar.current.startOfDay(for: date)
+                                showingDatePicker = false
+                            }
+                        ), in: ...Date.now, displayedComponents: .date)
+                        .datePickerStyle(.graphical)
+                    }
+                    .padding()
+                    .presentationDetents([.height(440)])
+                    .presentationDragIndicator(.visible)
+                }
+                .onAppear {
+                    hasAPIKey = KeychainStore.apiKey != nil
+                    #if DEBUG
+                    if ProcessInfo.processInfo.environment["DEBUG_SHOW_DATE_PICKER"] == "1" {
+                        showingDatePicker = true
+                    }
+                    #endif
+                }
         }
     }
 

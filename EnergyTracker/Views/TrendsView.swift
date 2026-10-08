@@ -13,6 +13,7 @@ struct TrendsView: View {
     @State private var tab: Tab = {
         #if DEBUG
         if ProcessInfo.processInfo.environment["DEBUG_TRENDS_TAB"] == "checkin" { return .checkin }
+        if ProcessInfo.processInfo.environment["DEBUG_TRENDS_TAB"] == "calories" { return .calories }
         #endif
         return .weight
     }()
@@ -189,23 +190,40 @@ private struct WeightTrendList: View {
 private struct CalorieHistoryList: View {
     @Environment(ProfileStore.self) private var profileStore
     @Query(sort: \Meal.timestamp, order: .reverse) private var meals: [Meal]
+    @Query(sort: \ExerciseSession.timestamp, order: .reverse) private var exercises: [ExerciseSession]
 
     private struct DayTotal: Identifiable {
         let day: Date
         let kcal: Double
         let protein: Double
         let mealCount: Int
+        var exerciseKcal: Double = 0
+        var exerciseCount: Int = 0
         var id: Date { day }
+
+        var subtitle: String {
+            let diet = mealCount > 0 ? "\(mealCount) 餐 · 蛋白质 \(protein.gramsText) g" : "未记饮食"
+            return exerciseCount > 0 ? "\(diet) · 运动 \(exerciseKcal.kcalText) kcal" : diet
+        }
     }
 
     private var goal: NutritionGoal { profileStore.goal }
 
     private var dayTotals: [DayTotal] {
         let calendar = Calendar.current
-        let grouped = Dictionary(grouping: meals) { calendar.startOfDay(for: $0.timestamp) }
-        return grouped.map { day, meals in
-            DayTotal(day: day, kcal: meals.reduce(0) { $0 + $1.totalKcal },
-                     protein: meals.reduce(0) { $0 + $1.totalProtein }, mealCount: meals.count)
+        let mealsByDay = Dictionary(grouping: meals.filter { $0.status == .done }) {
+            calendar.startOfDay(for: $0.timestamp)
+        }
+        let exercisesByDay = Dictionary(grouping: exercises.filter { $0.status == .done }) {
+            calendar.startOfDay(for: $0.timestamp)
+        }
+        let days = Set(mealsByDay.keys).union(exercisesByDay.keys)
+        return days.map { day in
+            let meals = mealsByDay[day] ?? []
+            let exercises = exercisesByDay[day] ?? []
+            return DayTotal(day: day, kcal: meals.reduce(0) { $0 + $1.totalKcal },
+                            protein: meals.reduce(0) { $0 + $1.totalProtein }, mealCount: meals.count,
+                            exerciseKcal: exercises.reduce(0) { $0 + $1.netKcal }, exerciseCount: exercises.count)
         }
         .sorted { $0.day > $1.day }
     }
@@ -268,13 +286,16 @@ private struct CalorieHistoryList: View {
                         HStack {
                             VStack(alignment: .leading) {
                                 Text(day.day, format: .dateTime.month().day().weekday())
-                                Text("\(day.mealCount) 餐 · 蛋白质 \(day.protein.gramsText) g")
+                                Text(day.subtitle)
                                     .font(.caption).foregroundStyle(.secondary)
                             }
                             Spacer()
-                            Text("\(day.kcal.kcalText) kcal")
+                            Text(day.mealCount > 0 ? "\(day.kcal.kcalText) kcal" : "—")
                                 .monospacedDigit()
-                                .foregroundStyle(day.kcal > Double(goal.kcal) ? .red : .primary)
+                                .foregroundStyle(day.mealCount > 0 && day.kcal > Double(goal.budget(
+                                    exerciseKcal: day.exerciseKcal,
+                                    eatBackRatio: profileStore.profile.eatBackRatio
+                                )) ? .red : .primary)
                         }
                     }
                 }
