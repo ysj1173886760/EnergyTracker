@@ -46,6 +46,8 @@ struct EnergyTrackerApp: App {
                 .environment(usageMonitor)
                 .onChange(of: scenePhase) { _, phase in
                     if phase == .active {
+                        analyzer.resumeInterrupted()
+                        exerciseAnalyzer.resumeInterrupted(profile: profileStore.profile)
                         Task { await healthSync.sync(context: container.mainContext, profileStore: profileStore) }
                         Task { await usageMonitor.refresh(force: false) }
                     }

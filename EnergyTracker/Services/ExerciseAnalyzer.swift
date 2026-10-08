@@ -14,6 +14,10 @@ final class ExerciseAnalyzer {
         context = container.mainContext
     }
 
+    func isRunning(_ session: ExerciseSession) -> Bool {
+        running.contains(session.id)
+    }
+
     func estimate(_ session: ExerciseSession, profile: UserProfile) {
         guard !running.contains(session.id) else { return }
         running.insert(session.id)

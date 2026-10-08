@@ -158,6 +158,14 @@ struct ChatView: View {
                             }
                         }
                     }
+                    if thread.sortedMessages.last?.isUser == true,
+                       !coach.isSending(thread), coach.chatError(thread) == nil {
+                        HStack {
+                            Text("没有收到回复").foregroundStyle(.secondary)
+                            Button("重新发送") { coach.send(nil, in: thread, profileStore: profileStore) }
+                        }
+                        .font(.footnote)
+                    }
                     Color.clear.frame(height: 1).id("bottom")
                 }
                 .padding()

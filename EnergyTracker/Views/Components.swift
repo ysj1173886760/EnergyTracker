@@ -113,6 +113,7 @@ struct MealThumbnail: View {
 }
 
 struct MealRow: View {
+    @Environment(MealAnalyzer.self) private var analyzer
     let meal: Meal
 
     var body: some View {
@@ -151,7 +152,12 @@ struct MealRow: View {
         case .failed:
             Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
         default:
-            ProgressView()
+            if analyzer.isRunning(meal) {
+                ProgressView()
+            } else {
+                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+                    .accessibilityLabel("任务已中断")
+            }
         }
     }
 }

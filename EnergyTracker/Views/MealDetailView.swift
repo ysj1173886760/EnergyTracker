@@ -12,7 +12,7 @@ struct MealDetailView: View {
     @State private var followUpText = ""
     @FocusState private var followUpFocused: Bool
 
-    private var busy: Bool { meal.status.isInProgress }
+    private var busy: Bool { analyzer.isRunning(meal) }
 
     var body: some View {
         List {
@@ -75,20 +75,23 @@ struct MealDetailView: View {
             } footer: {
                 Text("可以先离开这个页面，识别会在后台继续。")
             }
-        } else if meal.status == .failed {
+        } else if meal.status == .failed || meal.status.isInProgress {
             Section {
-                Label(meal.errorMessage ?? "未知错误", systemImage: "exclamationmark.triangle.fill")
+                Label(meal.status.isInProgress ? "任务已中断" : (meal.errorMessage ?? "未知错误"),
+                      systemImage: "exclamationmark.triangle.fill")
                     .foregroundStyle(.orange)
-                Button("重试") {
-                    if meal.rawVisionResponse == nil {
-                        analyzer.analyze(meal)
-                    } else if meal.hasPendingFollowUps {
-                        analyzer.applyFollowUps(meal)
-                    } else {
-                        analyzer.estimateNutrition(meal, items: meal.items.filter { !$0.hasNutrition })
-                    }
-                }
+                Button("重试", action: retry)
             }
+        }
+    }
+
+    private func retry() {
+        if meal.rawVisionResponse == nil {
+            analyzer.analyze(meal)
+        } else if meal.hasPendingFollowUps {
+            analyzer.applyFollowUps(meal)
+        } else {
+            analyzer.estimateNutrition(meal, items: meal.items.filter { !$0.hasNutrition })
         }
     }
 

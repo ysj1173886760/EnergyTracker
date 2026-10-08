@@ -138,7 +138,7 @@ struct OpenRouterClient {
 
     private func sendRetryingTransientFailures(_ request: URLRequest, body: Data) async throws -> (Data, HTTPURLResponse) {
         let transientCodes: Set<URLError.Code> = [
-            .networkConnectionLost, .timedOut, .cannotConnectToHost, .cannotFindHost,
+            .networkConnectionLost, .cannotConnectToHost, .cannotFindHost,
             .secureConnectionFailed, .dnsLookupFailed, .notConnectedToInternet,
         ]
         var attempt = 0

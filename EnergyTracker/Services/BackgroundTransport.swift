@@ -8,9 +8,23 @@ final class BackgroundTransport: NSObject, URLSessionDataDelegate, @unchecked Se
     static let identifier = "local.personal.EnergyTracker.background"
 
     private let lock = NSLock()
-    private var buffers: [Int: Data] = [:]
-    private var continuations: [Int: CheckedContinuation<(Data, HTTPURLResponse), Error>] = [:]
-    private var bodyFiles: [Int: URL] = [:]
+    private struct Pending {
+        let request: URLRequest
+        let bodyFile: URL
+        let continuation: CheckedContinuation<(Data, HTTPURLResponse), Error>
+        var createdInForeground: Bool
+        var task: URLSessionUploadTask
+        var data = Data()
+    }
+
+    private var pending: [Int: Pending] = [:]
+
+    override init() {
+        super.init()
+        _ = session
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(didBecomeActive), name: UIApplication.didBecomeActiveNotification, object: nil)
+    }
 
     /// Set by the app delegate when iOS relaunches the app to deliver session events.
     var eventsCompletionHandler: (() -> Void)?
@@ -19,8 +33,8 @@ final class BackgroundTransport: NSObject, URLSessionDataDelegate, @unchecked Se
         let config = URLSessionConfiguration.background(withIdentifier: Self.identifier)
         config.isDiscretionary = false
         config.sessionSendsLaunchEvents = true
-        config.timeoutIntervalForRequest = 900
-        config.timeoutIntervalForResource = 6 * 3600
+        config.timeoutIntervalForRequest = 300
+        config.timeoutIntervalForResource = 20 * 60
         return URLSession(configuration: config, delegate: self, delegateQueue: nil)
     }()
 
@@ -30,21 +44,45 @@ final class BackgroundTransport: NSObject, URLSessionDataDelegate, @unchecked Se
         session.getAllTasks { [weak self] tasks in
             guard let self else { return }
             lock.lock()
-            let known = Set(continuations.keys)
+            tasks.filter { self.pending[$0.taskIdentifier] == nil }.forEach { $0.cancel() }
             lock.unlock()
-            tasks.filter { !known.contains($0.taskIdentifier) }.forEach { $0.cancel() }
         }
     }
 
     func send(_ request: URLRequest, body: Data) async throws -> (Data, HTTPURLResponse) {
         let file = FileManager.default.temporaryDirectory.appending(path: "request-\(UUID().uuidString).json")
         try body.write(to: file)
+        return try await enqueue(request, bodyFile: file)
+    }
+
+    @MainActor
+    private func enqueue(_ request: URLRequest, bodyFile: URL) async throws -> (Data, HTTPURLResponse) {
+        let createdInForeground = UIApplication.shared.applicationState == .active
         return try await withCheckedThrowingContinuation { continuation in
-            let task = session.uploadTask(with: request, fromFile: file)
             lock.lock()
-            continuations[task.taskIdentifier] = continuation
-            bodyFiles[task.taskIdentifier] = file
+            let task = session.uploadTask(with: request, fromFile: bodyFile)
+            pending[task.taskIdentifier] = Pending(
+                request: request, bodyFile: bodyFile, continuation: continuation,
+                createdInForeground: createdInForeground, task: task)
+            task.resume()
             lock.unlock()
+        }
+    }
+
+    @MainActor
+    @objc private func didBecomeActive() {
+        guard UIApplication.shared.applicationState == .active else { return }
+        lock.lock()
+        defer { lock.unlock() }
+        let candidates = pending.filter { !$0.value.createdInForeground && $0.value.task.countOfBytesReceived == 0 }
+        for (identifier, var request) in candidates {
+            pending.removeValue(forKey: identifier)
+            request.task.cancel()
+            let task = session.uploadTask(with: request.request, fromFile: request.bodyFile)
+            request.task = task
+            request.createdInForeground = true
+            request.data = Data()
+            pending[task.taskIdentifier] = request
             task.resume()
         }
     }
@@ -53,24 +91,23 @@ final class BackgroundTransport: NSObject, URLSessionDataDelegate, @unchecked Se
 
     func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
         lock.lock()
-        buffers[dataTask.taskIdentifier, default: Data()].append(data)
+        pending[dataTask.taskIdentifier]?.data.append(data)
         lock.unlock()
     }
 
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
         lock.lock()
-        let continuation = continuations.removeValue(forKey: task.taskIdentifier)
-        let data = buffers.removeValue(forKey: task.taskIdentifier) ?? Data()
-        let file = bodyFiles.removeValue(forKey: task.taskIdentifier)
+        let request = pending.removeValue(forKey: task.taskIdentifier)
         lock.unlock()
-        if let file { try? FileManager.default.removeItem(at: file) }
+        guard let request else { return }
+        try? FileManager.default.removeItem(at: request.bodyFile)
 
         if let error {
-            continuation?.resume(throwing: error)
+            request.continuation.resume(throwing: error)
         } else if let response = task.response as? HTTPURLResponse {
-            continuation?.resume(returning: (data, response))
+            request.continuation.resume(returning: (request.data, response))
         } else {
-            continuation?.resume(throwing: URLError(.badServerResponse))
+            request.continuation.resume(throwing: URLError(.badServerResponse))
         }
     }
 

@@ -74,6 +74,7 @@ struct AddExerciseView: View {
 }
 
 struct ExerciseRow: View {
+    @Environment(ExerciseAnalyzer.self) private var analyzer
     let session: ExerciseSession
 
     var body: some View {
@@ -98,7 +99,12 @@ struct ExerciseRow: View {
             case .failed:
                 Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
             default:
-                ProgressView()
+                if analyzer.isRunning(session) {
+                    ProgressView()
+                } else {
+                    Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+                        .accessibilityLabel("任务已中断")
+                }
             }
         }
     }
@@ -111,7 +117,7 @@ struct ExerciseDetailView: View {
     @Environment(ProfileStore.self) private var profileStore
     @Environment(ExerciseAnalyzer.self) private var analyzer
 
-    private var busy: Bool { session.status.isInProgress }
+    private var busy: Bool { analyzer.isRunning(session) }
 
     var body: some View {
         Form {
@@ -127,6 +133,10 @@ struct ExerciseDetailView: View {
                         ProgressView()
                         Text("正在估算…")
                     }
+                } else if session.status.isInProgress {
+                    Label("任务已中断", systemImage: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange)
+                    Button("重试", action: retry)
                 }
                 if let error = session.errorMessage, session.status == .failed {
                     Text(error).font(.footnote).foregroundStyle(.red)
@@ -164,10 +174,7 @@ struct ExerciseDetailView: View {
                         .keyboardType(.decimalPad)
                         .multilineTextAlignment(.trailing)
                 }
-                Button {
-                    try? context.save()
-                    analyzer.estimate(session, profile: profileStore.profile)
-                } label: {
+                Button(action: retry) {
                     Label("按描述重新估算", systemImage: "arrow.clockwise")
                 }
                 .disabled(busy || session.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
@@ -185,6 +192,11 @@ struct ExerciseDetailView: View {
         .navigationTitle("运动详情")
         .navigationBarTitleDisplayMode(.inline)
         .onDisappear { try? context.save() }
+    }
+
+    private func retry() {
+        try? context.save()
+        analyzer.estimate(session, profile: profileStore.profile)
     }
 }
 
