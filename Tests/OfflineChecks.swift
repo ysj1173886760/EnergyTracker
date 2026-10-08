@@ -34,6 +34,30 @@ struct OfflineChecks {
         check(parsedUsage.promptTokens == 100 && parsedUsage.reasoningTokens == 5, "宽松 usage tokens")
         check(parsedUsage.cost == 0.012 && parsedUsage.model == "requested", "费用及请求模型")
         check(UsageParser.parse([:], model: "m", feature: .chat).cost == nil, "费用缺失不伪造零")
+        let sse = """
+        : OPENROUTER PROCESSING
+
+        data: {"id":"gen-1","provider":"P","choices":[{"delta":{"content":"{\\"a\\""},"finish_reason":null}]}
+
+        data: {"id":"gen-1","choices":[{"delta":{"content":":1}"},"finish_reason":"stop"}]}
+
+        data: {"id":"gen-1","choices":[{"delta":{"content":""},"finish_reason":"stop"}],"usage":{"cost":0.002}}
+
+        data: [DONE]
+        """
+        let collapsed = (try? JSONSerialization.jsonObject(with: OpenRouterStream.collapse(Data(sse.utf8))))
+            as? [String: Any] ?? [:]
+        let collapsedChoice = (collapsed["choices"] as? [[String: Any]])?.first
+        check((collapsedChoice?["message"] as? [String: Any])?["content"] as? String == "{\"a\":1}", "流式内容拼接")
+        check(collapsedChoice?["finish_reason"] as? String == "stop", "流式结束原因")
+        check(UsageParser.parse(collapsed, model: "m", feature: .chat).cost == 0.002
+              && collapsed["provider"] as? String == "P", "流式 usage 与 provider")
+        let streamError = Data("data: {\"error\":{\"code\":502,\"message\":\"x\"},\"choices\":[]}\n".utf8)
+        let collapsedError = (try? JSONSerialization.jsonObject(with: OpenRouterStream.collapse(streamError)))
+            as? [String: Any]
+        check(collapsedError?["error"] != nil, "流式中途错误")
+        let plain = Data("{\"error\":{\"code\":402}}".utf8)
+        check(OpenRouterStream.collapse(plain) == plain, "非流式响应原样保留")
         let usageEntries = [
             UsageEntry(date: date(0), feature: "vision", model: "a", cost: 0.01, subjectID: "meal1"),
             UsageEntry(date: date(-1), feature: "nutrition", model: "b", cost: 0.03, subjectID: "meal1"),

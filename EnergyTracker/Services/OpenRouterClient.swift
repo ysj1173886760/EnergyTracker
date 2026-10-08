@@ -101,6 +101,7 @@ struct OpenRouterClient {
             "model": model,
             "messages": messages,
             "max_tokens": 16000,
+            "stream": true,
         ]
         if json {
             body["response_format"] = ["type": "json_object"]
@@ -153,7 +154,8 @@ struct OpenRouterClient {
         while true {
             attempt += 1
             do {
-                let (data, response) = try await BackgroundTransport.shared.send(request, body: body)
+                let (streamed, response) = try await BackgroundTransport.shared.send(request, body: body)
+                let data = OpenRouterStream.collapse(streamed)
                 let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
                 var entry = UsageParser.parse(object, model: model, feature: feature, subjectID: subjectID)
                 let choice = (object["choices"] as? [[String: Any]])?.first

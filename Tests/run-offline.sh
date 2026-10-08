@@ -15,6 +15,7 @@ PY
 xcrun swiftc -swift-version 5 -parse-as-library -o "$work/checks" \
   EnergyTracker/Models/*.swift \
   EnergyTracker/Services/CostSummary.swift \
+  EnergyTracker/Services/OpenRouterStream.swift \
   EnergyTracker/Services/CheckIn.swift \
   EnergyTracker/Services/GoalCalculator.swift \
   EnergyTracker/Services/TargetCalibration.swift \
