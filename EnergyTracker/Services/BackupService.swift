@@ -17,6 +17,7 @@ enum BackupService {
         var dailySummaries: [Summary]?
         var plans: [Plan]?
         var threads: [Thread]?
+        var usageRecords: [UsageEntry]?
     }
 
     struct Plan: Codable {
@@ -174,6 +175,8 @@ enum BackupService {
         let plans = try context.fetch(FetchDescriptor<TrainingPlan>(sortBy: [SortDescriptor(\.createdAt)]))
         let threads = try context.fetch(FetchDescriptor<ChatThread>(sortBy: [SortDescriptor(\.createdAt)]))
 
+        let usage = try context.fetch(FetchDescriptor<UsageRecord>())
+
         let backup = Backup(
             profile: profile,
             weights: weights.map { Weight(date: $0.date, kg: $0.kg, healthKitSampleID: $0.healthKitSampleID) },
@@ -233,7 +236,8 @@ enum BackupService {
                 Thread(id: thread.id, createdAt: thread.createdAt, updatedAt: thread.updatedAt, title: thread.title,
                        kind: thread.kind,
                        messages: thread.sortedMessages.map { Thread.Message(createdAt: $0.createdAt, role: $0.role, content: $0.content) })
-            }
+            },
+            usageRecords: usage.map(\.entry)
         )
 
         let encoder = JSONEncoder()
@@ -413,6 +417,11 @@ enum BackupService {
                 entry.createdAt = message.createdAt
                 thread.messages.append(entry)
             }
+        }
+
+        var usageKeys = Set(try context.fetch(FetchDescriptor<UsageRecord>()).map { $0.entry.deduplicationKey })
+        for entry in backup.usageRecords ?? [] where usageKeys.insert(entry.deduplicationKey).inserted {
+            context.insert(UsageRecord(entry))
         }
 
         if !profileStore.profile.isConfigured, backup.profile.isConfigured {

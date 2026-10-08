@@ -275,6 +275,7 @@ struct ModelSettingsView: View {
             }
 
             Section("用量") {
+                NavigationLink("费用明细") { CostBreakdownView() }
                 LabeledContent("账户余额", value: money(usageMonitor.accountCredits?.balance))
                 LabeledContent("Key 剩余额度", value: keyRemainingText)
                 LabeledContent("今日花费", value: money(usageMonitor.keyInfo?.usageDaily))

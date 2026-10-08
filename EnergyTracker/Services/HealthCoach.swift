@@ -36,7 +36,8 @@ final class HealthCoach {
                 let client = try OpenRouterClient.fromKeychain()
                 let model = AppSettings.reviewModel
                 let input = try Self.encode(assessmentPayload(profileStore))
-                let response = try await client.chatJSON(model: model, system: Prompts.bodyAssessment, user: [.text(input)])
+                let response = try await client.chatJSON(model: model, feature: .assessment,
+                    system: Prompts.bodyAssessment, user: [.text(input)])
                 let content = AssessmentContent(json: response.json)
                 guard !content.headline.isEmpty || !content.overall.isEmpty else {
                     throw OpenRouterError.invalidJSON(response.raw)
@@ -155,7 +156,8 @@ final class HealthCoach {
                 let model = AppSettings.reviewModel
                 let isPartial = Calendar.current.isDateInToday(day)
                 let input = try Self.encode(dailyPayload(day: day, isPartial: isPartial, store: profileStore))
-                let response = try await client.chatJSON(model: model, system: Prompts.dailySummary, user: [.text(input)])
+                let response = try await client.chatJSON(model: model, feature: .dailySummary,
+                    system: Prompts.dailySummary, user: [.text(input)])
                 let content = DailySummaryContent(json: response.json)
                 guard !content.headline.isEmpty || !content.diet.isEmpty else {
                     throw OpenRouterError.invalidJSON(response.raw)
@@ -315,7 +317,8 @@ final class HealthCoach {
                     + "\n" + (try Self.encode(contextSnapshot(profileStore)))
                 var messages: [[String: Any]] = [["role": "system", "content": system]]
                 messages += thread.sortedMessages.suffix(40).map { ["role": $0.role, "content": $0.content] }
-                let reply = try await client.chatText(model: AppSettings.reviewModel, messages: messages)
+                let reply = try await client.chatText(model: AppSettings.reviewModel,
+                    feature: thread.isPlanIntake ? .planIntake : .chat, messages: messages)
                 thread.messages.append(ChatMessage(role: "assistant", content: reply.trimmingCharacters(in: .whitespacesAndNewlines)))
                 thread.updatedAt = .now
                 try context.save()
@@ -352,7 +355,8 @@ final class HealthCoach {
                     "user_data": contextSnapshot(profileStore),
                     "conversation": thread.sortedMessages.map { ["role": $0.isUser ? "用户" : "教练", "content": $0.content] },
                 ]
-                let response = try await client.chatJSON(model: model, system: Prompts.trainingPlan, user: [.text(try Self.encode(payload))])
+                let response = try await client.chatJSON(model: model, feature: .trainingPlan,
+                    system: Prompts.trainingPlan, user: [.text(try Self.encode(payload))])
                 let content = PlanContent(json: response.json)
                 guard !content.days.isEmpty else { throw OpenRouterError.invalidJSON(response.raw) }
                 for plan in fetch(FetchDescriptor<TrainingPlan>(predicate: #Predicate { $0.isActive })) {

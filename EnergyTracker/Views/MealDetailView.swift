@@ -4,6 +4,7 @@ import SwiftUI
 struct MealDetailView: View {
     @Environment(\.modelContext) private var context
     @Environment(MealAnalyzer.self) private var analyzer
+    @Query private var usageRecords: [UsageRecord]
     @Bindable var meal: Meal
 
     @State private var editingItem: FoodItem?
@@ -238,6 +239,10 @@ struct MealDetailView: View {
 
     private var debugSection: some View {
         Section("模型信息") {
+            let records = usageRecords.filter { $0.subjectID == meal.id.uuidString }
+            if !records.isEmpty {
+                LabeledContent("本餐 AI 费用", value: CostSummary.money(records.compactMap(\.cost).reduce(0, +)))
+            }
             LabeledContent("识别模型", value: meal.visionModel ?? "-")
             LabeledContent("热量模型", value: meal.nutritionModel ?? "-")
             if let original = meal.estimatedTotalKcal {

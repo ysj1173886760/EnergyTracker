@@ -23,7 +23,8 @@ final class WeeklyReviewer {
                 let client = try OpenRouterClient.fromKeychain()
                 let model = AppSettings.reviewModel
                 let input = try Self.payload(stats, profile: profile, previous: previous, context: context)
-                let response = try await client.chatJSON(model: model, system: Prompts.weeklyReview, user: [.text(input)])
+                let response = try await client.chatJSON(model: model, feature: .weeklyReview,
+                    system: Prompts.weeklyReview, user: [.text(input)])
                 let content = ReviewContent(json: response.json)
                 guard !content.summary.isEmpty || !content.headline.isEmpty else {
                     throw OpenRouterError.invalidJSON(response.raw)

@@ -53,7 +53,8 @@ struct OpenRouterClient {
 
     /// Sends a chat completion that must return a single JSON object, retrying once if the reply can't be parsed.
     /// `reasoning: false` disables thinking on reasoning models; nil leaves the model default.
-    func chatJSON(model: String, system: String, user: [Part], reasoning: Bool? = nil) async throws -> Response {
+    func chatJSON(model: String, feature: AIFeature, subjectID: String? = nil,
+                  system: String, user: [Part], reasoning: Bool? = nil) async throws -> Response {
         let content: [[String: Any]] = user.map { part in
             switch part {
             case let .text(text):
@@ -69,7 +70,8 @@ struct OpenRouterClient {
         var lastError: Error = OpenRouterError.emptyContent(finishReason: nil)
         for _ in 0..<2 {
             do {
-                let text = try await complete(model: model, messages: messages, json: true, reasoning: reasoning)
+                let text = try await complete(model: model, feature: feature, subjectID: subjectID,
+                                              messages: messages, json: true, reasoning: reasoning)
                 guard let json = Self.extractJSONObject(from: text) else { throw OpenRouterError.invalidJSON(text) }
                 return Response(json: json, raw: text)
             } catch let error as OpenRouterError {
@@ -83,11 +85,14 @@ struct OpenRouterClient {
     }
 
     /// Free-form reply for multi-turn chat. `messages` are `["role": ..., "content": ...]` dictionaries.
-    func chatText(model: String, messages: [[String: Any]]) async throws -> String {
-        try await complete(model: model, messages: messages, json: false, reasoning: nil)
+    func chatText(model: String, feature: AIFeature, subjectID: String? = nil,
+                  messages: [[String: Any]]) async throws -> String {
+        try await complete(model: model, feature: feature, subjectID: subjectID,
+                           messages: messages, json: false, reasoning: nil)
     }
 
-    private func complete(model: String, messages: [[String: Any]], json: Bool, reasoning: Bool?) async throws -> String {
+    private func complete(model: String, feature: AIFeature, subjectID: String?,
+                          messages: [[String: Any]], json: Bool, reasoning: Bool?) async throws -> String {
         var provider: [String: Any] = [
             // Without this, OpenRouter may route to a slow provider (observed 10x latency spread).
             "sort": "latency",
@@ -114,7 +119,8 @@ struct OpenRouterClient {
         request.setValue("EnergyTracker", forHTTPHeaderField: "X-Title")
         let payload = try JSONSerialization.data(withJSONObject: body)
 
-        let (data, response) = try await sendRetryingTransientFailures(request, body: payload)
+        let (data, response) = try await sendRetryingTransientFailures(request, body: payload, model: model,
+                                                      feature: feature, subjectID: subjectID, json: json)
         let status = response.statusCode
         let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
 
@@ -136,7 +142,9 @@ struct OpenRouterClient {
         return text
     }
 
-    private func sendRetryingTransientFailures(_ request: URLRequest, body: Data) async throws -> (Data, HTTPURLResponse) {
+    private func sendRetryingTransientFailures(_ request: URLRequest, body: Data, model: String,
+                                               feature: AIFeature, subjectID: String?, json: Bool)
+        async throws -> (Data, HTTPURLResponse) {
         let transientCodes: Set<URLError.Code> = [
             .networkConnectionLost, .cannotConnectToHost, .cannotFindHost,
             .secureConnectionFailed, .dnsLookupFailed, .notConnectedToInternet,
@@ -146,6 +154,22 @@ struct OpenRouterClient {
             attempt += 1
             do {
                 let (data, response) = try await BackgroundTransport.shared.send(request, body: body)
+                let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
+                var entry = UsageParser.parse(object, model: model, feature: feature, subjectID: subjectID)
+                let choice = (object["choices"] as? [[String: Any]])?.first
+                let message = choice?["message"] as? [String: Any]
+                let content = message?["content"] as? String ?? ""
+                if response.statusCode != 200 || object["error"] != nil {
+                    entry.errorSummary = "HTTP \(response.statusCode) 请求失败"
+                } else if content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    entry.errorSummary = "模型没有返回内容"
+                } else if json && Self.extractJSONObject(from: content) == nil {
+                    entry.errorSummary = "模型返回的内容不是有效的 JSON"
+                } else {
+                    entry.succeeded = true
+                }
+                let recordedEntry = entry
+                await MainActor.run { UsageLedger.shared.record(recordedEntry) }
                 if attempt < 3, response.statusCode == 429 || (500...599).contains(response.statusCode) {
                     try await Task.sleep(for: .seconds(3 * attempt))
                     continue

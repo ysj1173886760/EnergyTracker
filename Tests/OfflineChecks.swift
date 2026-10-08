@@ -26,6 +26,30 @@ struct OfflineChecks {
         let calendar = Calendar.current
         let now = calendar.startOfDay(for: Date())
         func date(_ offset: Int) -> Date { calendar.date(byAdding: .day, value: offset, to: now)! }
+        let parsedUsage = UsageParser.parse([
+            "id": "generation-1", "provider": "test",
+            "usage": ["prompt_tokens": "100", "completion_tokens": 20, "cost": "0.012",
+                      "completion_tokens_details": ["reasoning_tokens": "5"]]
+        ], model: "requested", feature: .vision)
+        check(parsedUsage.promptTokens == 100 && parsedUsage.reasoningTokens == 5, "宽松 usage tokens")
+        check(parsedUsage.cost == 0.012 && parsedUsage.model == "requested", "费用及请求模型")
+        check(UsageParser.parse([:], model: "m", feature: .chat).cost == nil, "费用缺失不伪造零")
+        let usageEntries = [
+            UsageEntry(date: date(0), feature: "vision", model: "a", cost: 0.01, subjectID: "meal1"),
+            UsageEntry(date: date(-1), feature: "nutrition", model: "b", cost: 0.03, subjectID: "meal1"),
+            UsageEntry(date: date(-6), feature: "vision", model: "a", cost: 0.02, subjectID: "meal2"),
+            UsageEntry(date: date(-7), feature: "chat", model: "b", cost: nil),
+            UsageEntry(date: date(1), feature: "chat", model: "b", cost: 9)
+        ]
+        check(CostSummary.filter(usageEntries, period: .today, now: now).count == 1, "今天边界")
+        check(CostSummary.filter(usageEntries, period: .week, now: now).count == 3, "七天边界")
+        check(CostSummary.filter(usageEntries, period: .month, now: now).count == 4, "三十天排除未来")
+        check(CostSummary.filter(usageEntries, period: .all, now: now).count == 4, "全部排除未来")
+        check(abs((CostSummary.mealAverage(usageEntries) ?? 0) - 0.03) < 0.000001, "按餐合并平均")
+        check(CostSummary.mealAverage([]) == nil, "空餐平均")
+        let features = CostSummary.groups(Array(usageEntries.prefix(4)), by: \.feature)
+        check(features.count == 3 && features.last?.cost == 0, "功能汇总及费用排序")
+        check(CostSummary.groups(Array(usageEntries.prefix(4)), by: \.model).first?.count == 2, "模型分组")
         func meal(_ offset: Int, _ kcal: Double, manual: Bool = false) -> Meal {
             let m = Meal(timestamp: date(offset), mealType: .lunch, note: "测试", photoFilename: nil)
             let item = FoodItem(name: "食物", grams: 100, sortIndex: 0)
@@ -214,7 +238,7 @@ struct OfflineChecks {
         let schema = Schema([
             Meal.self, FoodItem.self, MealFollowUp.self, WeightEntry.self, BodyMeasurement.self,
             BodyAssessment.self, WeeklyReview.self, ExerciseSession.self, ExerciseItem.self,
-            DailySummary.self, ChatThread.self, ChatMessage.self, TrainingPlan.self
+            DailySummary.self, ChatThread.self, ChatMessage.self, TrainingPlan.self, UsageRecord.self
         ])
         let container = try ModelContainer(for: schema, configurations: ModelConfiguration(isStoredInMemoryOnly: true))
         let context = container.mainContext
@@ -233,6 +257,8 @@ struct OfflineChecks {
         body.healthKitFatDate = date(-1)
         body.bodyFatPct = 20
         context.insert(body)
+        context.insert(UsageRecord(parsedUsage))
+        context.insert(UsageRecord(usageEntries[0]))
         try context.save()
         profile.kcalAdjustment = 100
         let url = try BackupService.export(context: context, profile: profile, includePhotos: false)
@@ -244,6 +270,7 @@ struct OfflineChecks {
         check(
             backup.weights[0].healthKitSampleID == "sample-id" && backup.measurements?[0].healthKitFatDate != nil,
             "健康来源导出")
+        check(backup.usageRecords?.count == 2, "调用记录导出")
         check(backup.profile.kcalAdjustment == 100, "校准字段导出")
         let restoredContainer = try ModelContainer(
             for: schema, configurations: ModelConfiguration(isStoredInMemoryOnly: true))
@@ -259,6 +286,10 @@ struct OfflineChecks {
         let store = ProfileStore()
         store.profile = UserProfile()
         _ = try BackupService.importBackup(from: url, context: restoredContainer.mainContext, profileStore: store)
+        _ = try BackupService.importBackup(from: url, context: restoredContainer.mainContext, profileStore: store)
+        let restoredUsage = try restoredContainer.mainContext.fetch(FetchDescriptor<UsageRecord>())
+        check(restoredUsage.count == 2, "重复导入按 generationID 及日期模型功能去重")
+        check(restoredUsage.contains { $0.cost == 0.012 && $0.reasoningTokens == 5 }, "调用费用备份往返")
         let restored = try restoredContainer.mainContext.fetch(FetchDescriptor<Meal>())[0]
         check(
             restored.oilLevelRaw == "less" && restored.items[0].kcalUncertainty == 0.15 && restored.totalFiber == 4
@@ -268,7 +299,8 @@ struct OfflineChecks {
         check(manual.count == 1 && manual[0].healthKitSampleID == nil && manual[0].kg == 72, "手动体重覆盖导入并清除来源")
         let newKeys: Set<String> = [
             "oilLevelRaw", "kcalUncertainty", "fiberPer100g", "sodiumMgPer100g", "addedSugarPer100g",
-            "healthKitSampleID", "healthKitSource", "healthKitFatDate", "healthKitWaistDate", "kcalAdjustment"
+            "usageRecords", "healthKitSampleID", "healthKitSource", "healthKitFatDate",
+            "healthKitWaistDate", "kcalAdjustment"
         ]
         func legacy(_ value: Any) -> Any {
             if let values = value as? [String: Any] {
@@ -280,6 +312,7 @@ struct OfflineChecks {
         let oldData = try JSONSerialization.data(
             withJSONObject: legacy(try JSONSerialization.jsonObject(with: Data(contentsOf: url))))
         let old = try decoder.decode(BackupService.Backup.self, from: oldData)
+        check(old.usageRecords == nil, "旧备份缺少调用记录兼容")
         check(
             old.profile.kcalAdjustment == nil && old.meals[0].oilLevelRaw == nil
                 && old.weights[0].healthKitSampleID == nil, "旧备份兼容")

@@ -61,7 +61,8 @@ final class ExerciseAnalyzer {
         let input = String(decoding: try JSONSerialization.data(withJSONObject: payload), as: UTF8.self)
 
         let model = AppSettings.exerciseModel
-        let response = try await client.chatJSON(model: model, system: Prompts.exercise, user: [.text(input)])
+        let response = try await client.chatJSON(model: model, feature: .exercise,
+            system: Prompts.exercise, user: [.text(input)])
         guard let rawItems = response.json["items"] as? [[String: Any]] else {
             throw OpenRouterError.invalidJSON(response.raw)
         }

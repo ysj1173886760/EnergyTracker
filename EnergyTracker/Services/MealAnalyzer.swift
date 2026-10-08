@@ -103,7 +103,9 @@ final class MealAnalyzer {
 
         if let oil = meal.oilLevelRaw.flatMap(OilLevel.init) { parts.append(.text("用户确认油量：\(oil.title)")) }
         let model = AppSettings.visionModel
-        let response = try await client.chatJSON(model: model, system: Prompts.vision, user: parts)
+        let response = try await client.chatJSON(model: model, feature: .vision,
+            subjectID: meal.id.uuidString,
+            system: Prompts.vision, user: parts)
 
         for item in meal.items {
             context.delete(item)
@@ -161,7 +163,9 @@ final class MealAnalyzer {
         if let filename = meal.photoFilename, let data = PhotoStore.uploadData(filename) {
             parts.append(.jpeg(data))
         }
-        let response = try await client.chatJSON(model: AppSettings.visionModel, system: Prompts.revision, user: parts)
+        let response = try await client.chatJSON(model: AppSettings.visionModel, feature: .revision,
+            subjectID: meal.id.uuidString,
+            system: Prompts.revision, user: parts)
         guard let rawItems = response.json["items"] as? [[String: Any]] else {
             throw OpenRouterError.invalidJSON(response.raw)
         }
@@ -230,7 +234,9 @@ final class MealAnalyzer {
 
         let input = String(data: try JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys]), encoding: .utf8) ?? "{}"
         let model = AppSettings.nutritionModel
-        let response = try await client.chatJSON(model: model, system: Prompts.nutrition, user: [.text(input)],
+        let response = try await client.chatJSON(model: model, feature: .nutrition,
+            subjectID: meal.id.uuidString,
+            system: Prompts.nutrition, user: [.text(input)],
                                                  reasoning: AppSettings.nutritionReasoning)
 
         let results = response.json["items"] as? [[String: Any]] ?? []
