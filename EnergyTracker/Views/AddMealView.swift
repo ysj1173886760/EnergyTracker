@@ -120,14 +120,23 @@ struct AddMealView: View {
                         .buttonStyle(.bordered)
                     }
                 } footer: {
-                    Text("没有照片也可以，只写文字描述，例如「一碗牛肉面，加了个煎蛋」。")
+                    Text("没有照片也可以，直接在下面用文字描述吃了什么，AI 会估算热量。")
                 }
 
-        Section("油量") { OilLevelPicker(selection: $oilLevel) }
-                Section("补充说明（可选）") {
-                    TextField("例如：只吃了一半、外卖比较油、饭是半碗", text: $note, axis: .vertical)
-                        .lineLimit(2...5)
+                Section {
+                    TextField(image == nil
+                              ? "例如：一碗牛肉面加一个煎蛋，汤喝了一半；一杯中杯拿铁"
+                              : "例如：只吃了一半、外卖比较油、饭是半碗",
+                              text: $note, axis: .vertical)
+                        .lineLimit(image == nil ? 3...8 : 2...5)
+                } header: {
+                    Text(image == nil ? "食物描述" : "补充说明（可选）")
+                } footer: {
+                    if image == nil {
+                        Text("写清楚食物、份量（几碗、几个、多少克）和做法，估算会更准。")
+                    }
                 }
+                Section("油量") { OilLevelPicker(selection: $oilLevel) }
     }
 
     private func loadPicked(_ item: PhotosPickerItem?) async {

@@ -1,11 +1,13 @@
 import Foundation
 
 enum AIFeature: String, CaseIterable, Codable {
-    case vision, revision, nutrition, exercise, assessment, dailySummary, weeklyReview, chat, planIntake, trainingPlan
+    case vision, textRecognition, revision, nutrition, exercise, assessment, dailySummary, weeklyReview, chat,
+         planIntake, trainingPlan
 
     var title: String {
         switch self {
         case .vision: "拍照识别"
+        case .textRecognition: "文字识别"
         case .revision: "补充修正"
         case .nutrition: "热量估算"
         case .exercise: "运动解析"
@@ -21,6 +23,7 @@ enum AIFeature: String, CaseIterable, Codable {
     var symbol: String {
         switch self {
         case .vision: "camera"
+        case .textRecognition: "text.bubble"
         case .revision: "pencil"
         case .nutrition: "fork.knife"
         case .exercise: "figure.run"

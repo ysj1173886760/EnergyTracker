@@ -103,7 +103,8 @@ final class MealAnalyzer {
 
         if let oil = meal.oilLevelRaw.flatMap(OilLevel.init) { parts.append(.text("用户确认油量：\(oil.title)")) }
         let model = AppSettings.visionModel
-        let response = try await client.chatJSON(model: model, feature: .vision,
+        let response = try await client.chatJSON(model: model,
+            feature: meal.photoFilename == nil ? .textRecognition : .vision,
             subjectID: meal.id.uuidString,
             system: Prompts.vision, user: parts)
 
