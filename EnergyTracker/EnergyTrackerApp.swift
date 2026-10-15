@@ -5,11 +5,12 @@ import SwiftUI
 struct EnergyTrackerApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @Environment(\.scenePhase) private var scenePhase
+    @State private var autoBackup: AutoBackup
     @State private var healthSync: HealthSync
     @State private var usageMonitor = UsageMonitor()
     private let container: ModelContainer
     @State private var analyzer: MealAnalyzer
-    @State private var profileStore = ProfileStore()
+    @State private var profileStore: ProfileStore
     @State private var reviewer = WeeklyReviewer()
     @State private var exerciseAnalyzer: ExerciseAnalyzer
     @State private var coach: HealthCoach
@@ -24,6 +25,9 @@ struct EnergyTrackerApp: App {
         } catch {
             fatalError("无法打开本地数据库：\(error)")
         }
+        let profileStore = ProfileStore()
+        _profileStore = State(initialValue: profileStore)
+        _autoBackup = State(initialValue: AutoBackup(context: container.mainContext, profileStore: profileStore))
         UsageLedger.shared.configure(container: container)
         _analyzer = State(initialValue: MealAnalyzer(container: container))
         _exerciseAnalyzer = State(initialValue: ExerciseAnalyzer(container: container))
@@ -38,7 +42,9 @@ struct EnergyTrackerApp: App {
         WindowGroup {
             Group {
                 #if DEBUG
-                if ProcessInfo.processInfo.environment["DEBUG_SEED_USAGE"] == "1" {
+                if ProcessInfo.processInfo.environment["DEBUG_SHOW_BACKUP"] == "1" {
+                    NavigationStack { BackupView() }
+                } else if ProcessInfo.processInfo.environment["DEBUG_SEED_USAGE"] == "1" {
                     NavigationStack { CostBreakdownView() }
                 } else {
                     RootView()
@@ -47,6 +53,7 @@ struct EnergyTrackerApp: App {
                 RootView()
                 #endif
             }
+                .environment(autoBackup)
                 .environment(analyzer)
                 .environment(profileStore)
                 .environment(reviewer)
@@ -56,6 +63,12 @@ struct EnergyTrackerApp: App {
                 .environment(healthSync)
                 .environment(usageMonitor)
                 .onChange(of: scenePhase) { _, phase in
+                    #if DEBUG
+                    if ProcessInfo.processInfo.environment["DEBUG_BACKUP_FOLDER"] != nil { return }
+                    #endif
+                    if phase == .active || phase == .background {
+                        Task { await autoBackup.backupIfNeeded() }
+                    }
                     if phase == .active {
                         #if DEBUG
                         if ProcessInfo.processInfo.environment["DEBUG_SEED_USAGE"] == "1" { return }
@@ -68,6 +81,11 @@ struct EnergyTrackerApp: App {
                 }
                 .task {
                     #if DEBUG
+                    if ProcessInfo.processInfo.environment["DEBUG_BACKUP_FOLDER"] != nil {
+                        seedForTesting()
+                        await autoBackup.backupNow()
+                        return
+                    }
                     if ProcessInfo.processInfo.environment["DEBUG_SEED_USAGE"] == "1" {
                         seedForTesting()
                         return

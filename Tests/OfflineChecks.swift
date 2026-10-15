@@ -26,6 +26,24 @@ struct OfflineChecks {
         let calendar = Calendar.current
         let now = calendar.startOfDay(for: Date())
         func date(_ offset: Int) -> Date { calendar.date(byAdding: .day, value: offset, to: now)! }
+        let backupName = BackupRotation.filename(for: now)
+        check(BackupRotation.date(from: backupName) == now, "备份文件名往返")
+        check(BackupRotation.date(from: "健康助手备份-2026-02-30-1200.json") == nil, "拒绝无效日期")
+        check(BackupRotation.date(from: "其他-2026-01-01-1200.json") == nil, "排除其他文件")
+        check(BackupRotation.date(from: "健康助手备份-2026-01-01-1200.json.bak") == nil, "排除其他后缀")
+        let backupNames = (0..<20).map { BackupRotation.filename(for: date(-$0)) }
+        let deleted = BackupRotation.filesToDelete(backupNames.reversed() + ["照片.jpg", "健康助手备份-notes.json"])
+        check(Set(deleted) == Set(backupNames.suffix(6)), "仅删除最旧六份，保留十四份及其他文件")
+        check(BackupRotation.filesToDelete(Array(backupNames.prefix(14))).isEmpty, "十四份不删除")
+        check(BackupRotation.filesToDelete([]).isEmpty, "空文件夹")
+        check(BackupRotation.needsBackup(configured: true, lastSuccess: nil, now: now), "首次备份")
+        check(!BackupRotation.needsBackup(configured: false, lastSuccess: nil, now: now), "未配置不备份")
+        check(!BackupRotation.needsBackup(configured: true,
+              lastSuccess: now.addingTimeInterval(-86399), now: now), "未满二十四小时")
+        check(BackupRotation.needsBackup(configured: true,
+              lastSuccess: now.addingTimeInterval(-86400), now: now), "二十四小时边界")
+        check(!BackupRotation.needsBackup(configured: true,
+              lastSuccess: now.addingTimeInterval(60), now: now), "未来时间不重复备份")
         let parsedUsage = UsageParser.parse([
             "id": "generation-1", "provider": "test",
             "usage": ["prompt_tokens": "100", "completion_tokens": 20, "cost": "0.012",

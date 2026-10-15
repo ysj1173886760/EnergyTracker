@@ -371,6 +371,7 @@ struct BackupView: View {
 
     var body: some View {
         Form {
+            AutoBackupSection()
             Section {
                 Toggle("包含照片", isOn: $includePhotos)
                 Button {

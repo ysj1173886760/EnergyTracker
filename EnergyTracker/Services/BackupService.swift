@@ -164,7 +164,7 @@ enum BackupService {
         var profileRestored = false
     }
 
-    static func export(context: ModelContext, profile: UserProfile, includePhotos: Bool) throws -> URL {
+    private static func snapshot(context: ModelContext, profile: UserProfile, includePhotos: Bool) throws -> Backup {
         let meals = try context.fetch(FetchDescriptor<Meal>(sortBy: [SortDescriptor(\.timestamp)]))
         let weights = try context.fetch(FetchDescriptor<WeightEntry>(sortBy: [SortDescriptor(\.date)]))
         let reviews = try context.fetch(FetchDescriptor<WeeklyReview>(sortBy: [SortDescriptor(\.weekStart)]))
@@ -240,13 +240,28 @@ enum BackupService {
             usageRecords: usage.map(\.entry)
         )
 
+        return backup
+    }
+
+    static func export(context: ModelContext, profile: UserProfile, includePhotos: Bool) throws -> URL {
+        try write(snapshot(context: context, profile: profile, includePhotos: includePhotos))
+    }
+
+    static func exportAsync(context: ModelContext, profile: UserProfile) async throws -> URL {
+        let backup = try snapshot(context: context, profile: profile, includePhotos: true)
+        return try await Task.detached(priority: .utility) { try write(backup) }.value
+    }
+
+    nonisolated private static func write(_ backup: Backup) throws -> URL {
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
         encoder.outputFormatting = [.sortedKeys]
         let data = try encoder.encode(backup)
 
         let stamp = Date().formatted(.iso8601.year().month().day())
-        let url = FileManager.default.temporaryDirectory.appending(path: "健康助手备份-\(stamp).json")
+        let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let url = directory.appending(path: "健康助手备份-\(stamp).json")
         try data.write(to: url, options: .atomic)
         return url
     }

@@ -23,6 +23,7 @@ xcrun swiftc -swift-version 5 -parse-as-library -o "$work/checks" \
   EnergyTracker/Services/HealthGuard.swift \
   EnergyTracker/Services/NutritionTotals.swift \
   EnergyTracker/Services/ProfileStore.swift \
+  EnergyTracker/Services/BackupRotation.swift \
   EnergyTracker/Services/BackupService.swift \
   "$work/JSONValue.swift" Tests/OfflineChecks.swift
 "$work/checks"
